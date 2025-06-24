@@ -26,26 +26,26 @@
       border-radius: 10px;
       font-weight: bold;
     }
+    .final-banner {
+      background-color: #28a745;
+      color: white;
+      padding: 15px;
+      margin-top: 20px;
+      text-align: center;
+      border-radius: 10px;
+      font-size: 1.5rem;
+      display: none;
+    }
     .btn-checkmatch {
       float: right;
     }
     @keyframes slideIn {
-      from {
-        transform: translateY(50px);
-        opacity: 0;
-      }
-      to {
-        transform: translateY(0);
-        opacity: 1;
-      }
+      from { transform: translateY(50px); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
     }
     @keyframes fadeIn {
-      from {
-        opacity: 0;
-      }
-      to {
-        opacity: 1;
-      }
+      from { opacity: 0; }
+      to { opacity: 1; }
     }
   </style>
 </head>
@@ -64,47 +64,59 @@
           <th>Net Win Rounds</th>
         </tr>
       </thead>
-      <tbody id="tableBody">
-        <!-- Filled dynamically -->
-      </tbody>
+      <tbody id="tableBody"></tbody>
     </table>
 
-    <div id="qualificationScenario" class="qualify-message bg-info text-dark d-none">
-      <!-- Filled dynamically -->
-    </div>
+    <div id="qualificationScenario" class="qualify-message bg-info text-dark d-none"></div>
+    <div id="finalMatchBanner" class="final-banner"></div>
   </div>
 
   <h2 class="mt-5">Match Schedule</h2>
   <div class="container">
-    <ul class="list-group list-group-flush" id="matchSchedule">
-      <!-- Schedule will be added dynamically -->
-    </ul>
+    <ul class="list-group list-group-flush" id="matchSchedule"></ul>
   </div>
 
   <script>
-    const teams = [
-      { name: "harsha", played: 0, won: 0, netWinRounds: 0 },
-      { name: "praveen", played: 0, won: 0, netWinRounds: 0 },
-      { name: "rahul", played: 0, won: 0, netWinRounds: 0 },
-      { name: "vinay", played: 0, won: 0, netWinRounds: 0 },
-    ];
+    let teams = [];
+    const API_BASE = "https://sheet.best/api/sheets/ea5897f9-5be0-42f2-8eb3-47300ed7cb0a";
+
+    function fetchTeamsAndRender() {
+      fetch(API_BASE)
+        .then(res => res.json())
+        .then(data => {
+          teams = data.map(row => ({
+            id: row.ID,
+            name: row.Team.trim().toLowerCase(),
+            played: parseInt(row.Played),
+            won: parseInt(row.Won),
+            netWinRounds: parseInt(row.NetWinRounds)
+          }));
+          renderTable();
+        })
+        .catch(err => console.error("Failed to load team data:", err));
+    }
+
+    function updateTeamOnSheet(teamId, updatedData) {
+      fetch(`${API_BASE}/ID/${teamId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(updatedData)
+      })
+        .then(response => response.json())
+        .then(data => console.log(`Updated team ${teamId}:`, data))
+        .catch(error => console.error(`Error updating team ${teamId}:`, error));
+    }
 
     const matches = [
-      "harsha vs praveen",
-      "rahul vs vinay",
-      "praveen vs vinay",
-      "rahul vs harsha",
-      "harsha vs vinay",
-      "rahul vs praveen"
+      "harsha vs praveen", "rahul vs vinay", "praveen vs vinay", "rahul vs harsha", "harsha vs vinay", "rahul vs praveen",
+      "harsha vs rahul", "praveen vs vinay", "vinay vs harsha", "praveen vs rahul", "vinay vs rahul", "praveen vs harsha",
+      "subbu vs last" // clearly labeled match
     ];
 
     const completedMatches = new Set();
 
     function renderTable() {
-      teams.sort((a, b) => {
-        if (b.won === a.won) return b.netWinRounds - a.netWinRounds;
-        return b.won - a.won;
-      });
+      teams.sort((a, b) => b.won - a.won || b.netWinRounds - a.netWinRounds);
 
       const tableBody = document.getElementById("tableBody");
       tableBody.innerHTML = "";
@@ -120,12 +132,35 @@
         tableBody.innerHTML += row;
       });
 
-      if (teams.every(team => team.played >= 3)) {
-        document.getElementById("qualificationScenario").classList.remove("d-none");
-        document.getElementById("qualificationScenario").innerHTML =
-          `🏆 <strong>${teams[0].name}</strong> qualifies directly to the final.<br>
-          ⚔️ <strong>${teams[1].name}</strong> vs <strong>${teams[2].name}</strong> will play the eliminator.`;
+      if (teams.every(t => t.played >= 6)) {
+        const qDiv = document.getElementById("qualificationScenario");
+        qDiv.classList.remove("d-none");
+
+        const finalist = teams[0].name;
+        const eliminatorTeam1 = teams[1].name;
+        const eliminatorTeam2 = teams[2].name;
+        const lastPlaceTeam = teams[teams.length - 1].name;
+
+        qDiv.innerHTML = `
+          🏆 <strong>${finalist}</strong> qualifies directly to the final.<br>
+          ⚔️ <strong>${eliminatorTeam1}</strong> vs <strong>${eliminatorTeam2}</strong> play the eliminator.<br>
+          🔻 <strong>${lastPlaceTeam}</strong> plays against Subbu.<br>
+          ✅ If Subbu wins, he plays the eliminator winner in the final. Otherwise, the eliminator winner plays the final.<br>
+          🎯 After Subbu match & eliminator, final prompt will appear.
+        `;
+
+        setTimeout(() => runEliminatorAndFinal(finalist, eliminatorTeam1, eliminatorTeam2, lastPlaceTeam), 2000);
       }
+    }
+
+    function runEliminatorAndFinal(finalist, elim1, elim2, lastPlaceTeam) {
+      const elimWinner = prompt(`Who won the eliminator? (${elim1} or ${elim2})`).trim().toLowerCase();
+      const subbuWinner = prompt(`Who won the match between ${lastPlaceTeam} and subbu? (subbu or ${lastPlaceTeam})`).trim().toLowerCase();
+      let finalOpponent = subbuWinner === "subbu" ? "subbu" : elimWinner;
+      const finalWinner = prompt(`Final: Who won between ${finalist} and ${finalOpponent}?`).trim().toLowerCase();
+
+      document.getElementById("finalMatchBanner").style.display = "block";
+      document.getElementById("finalMatchBanner").innerHTML = `🏆 Congratulations <strong>${finalWinner}</strong>! You are the Free Fire Champion!`;
     }
 
     function renderSchedule() {
@@ -158,8 +193,8 @@
 
       const loser = winner === team1 ? team2 : team1;
 
-      const winTeam = teams.find(t => t.name.toLowerCase() === winner);
-      const loseTeam = teams.find(t => t.name.toLowerCase() === loser);
+      const winTeam = teams.find(t => t.name === winner);
+      const loseTeam = teams.find(t => t.name === loser);
 
       if (!winTeam || !loseTeam) {
         alert("Invalid team name.");
@@ -172,11 +207,23 @@
 
       loseTeam.played += 1;
 
+      updateTeamOnSheet(winTeam.id, {
+        Played: winTeam.played,
+        Won: winTeam.won,
+        NetWinRounds: winTeam.netWinRounds
+      });
+
+      updateTeamOnSheet(loseTeam.id, {
+        Played: loseTeam.played,
+        Won: loseTeam.won,
+        NetWinRounds: loseTeam.netWinRounds
+      });
+
       completedMatches.add(index);
       renderTable();
     }
 
-    renderTable();
+    fetchTeamsAndRender();
     renderSchedule();
   </script>
 </body>
